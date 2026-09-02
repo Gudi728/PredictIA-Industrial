@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Registros
+logs/
+*.log
+npm-debug.log*
+
+# Compilación y cobertura
+coverage/
+dist/
+build/
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
