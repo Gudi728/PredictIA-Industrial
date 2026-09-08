@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import healthRoutes from "./routes/health.routes.js";
+import authRoutes from "./routes/auth.routes.js";
 import roleRoutes from "./routes/role.routes.js";
 import variableRoutes from "./routes/variable.routes.js";
 import machineRoutes from "./routes/machine.routes.js";
@@ -20,6 +21,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/health", healthRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/variables", variableRoutes);
 app.use("/api/maquinas", machineRoutes);
