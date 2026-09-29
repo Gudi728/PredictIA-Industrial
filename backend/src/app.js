@@ -6,6 +6,7 @@ import roleRoutes from "./routes/role.routes.js";
 import userRoutes from "./routes/user.routes.js";
 import variableRoutes from "./routes/variable.routes.js";
 import machineRoutes from "./routes/machine.routes.js";
+import limitRoutes from "./routes/limit.routes.js";
 import { notFound } from "./middlewares/notFound.middleware.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 
@@ -27,6 +28,7 @@ app.use("/api/roles", roleRoutes);
 app.use("/api/usuarios", userRoutes);
 app.use("/api/variables", variableRoutes);
 app.use("/api/maquinas", machineRoutes);
+app.use("/api/limites", limitRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
