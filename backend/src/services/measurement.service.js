@@ -1,7 +1,13 @@
 import {
+  countMeasurementHistory,
   findConfiguredLimit,
+  findCurrentStateMachineById,
+  findCurrentStateVariables,
+  findHistoricalMachineById,
+  findHistoricalVariableById,
   findMachineById,
   findMeasurementById,
+  findMeasurementHistory,
   findVariableById,
   insertMeasurement,
   withMeasurementTransaction,
@@ -224,4 +230,234 @@ export const createTestMeasurement = async (data = {}) => {
       connection
     );
   }).catch(handleDatabaseError);
+};
+
+const validateOptionalPositiveInteger = (value, field) => {
+  if (value === undefined) {
+    return null;
+  }
+
+  return validatePositiveInteger(value, field);
+};
+
+const normalizeDateFilter = (value, field, endOfDay = false) => {
+  if (value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    throw createError(`${field} tiene un formato inválido`, 400);
+  }
+
+  const normalizedValue = value.trim();
+
+  const dateOnlyMatch =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedValue);
+
+  const dateTimeMatch =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$/.exec(
+      normalizedValue
+    );
+
+  const match = dateOnlyMatch || dateTimeMatch;
+
+  if (!match) {
+    throw createError(
+      `${field} debe tener formato YYYY-MM-DD o YYYY-MM-DDTHH:mm:ss`,
+      400
+    );
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = dateTimeMatch ? Number(match[4]) : 0;
+  const minute = dateTimeMatch ? Number(match[5]) : 0;
+  const second = dateTimeMatch ? Number(match[6]) : 0;
+
+  const validationDate = new Date(
+    Date.UTC(year, month - 1, day, hour, minute, second)
+  );
+
+  const validDate =
+    validationDate.getUTCFullYear() === year &&
+    validationDate.getUTCMonth() === month - 1 &&
+    validationDate.getUTCDate() === day &&
+    validationDate.getUTCHours() === hour &&
+    validationDate.getUTCMinutes() === minute &&
+    validationDate.getUTCSeconds() === second;
+
+  if (!validDate) {
+    throw createError(`${field} contiene una fecha inexistente`, 400);
+  }
+
+  if (dateOnlyMatch) {
+    return `${normalizedValue} ${endOfDay ? "23:59:59" : "00:00:00"}`;
+  }
+
+  return normalizedValue.replace("T", " ");
+};
+
+const normalizeHistoricalMeasurement = (measurement) => ({
+  ...measurement,
+  valor: Number(measurement.valor),
+  limite_actual:
+    measurement.limite_actual === null
+      ? null
+      : Number(measurement.limite_actual),
+});
+
+const normalizeCurrentStateVariable = (variable) => ({
+  id_variable: variable.id_variable,
+  nombre_variable: variable.nombre_variable,
+  unidad: variable.unidad,
+  limite_maximo: Number(variable.limite_maximo),
+  ultima_medicion:
+    variable.id_medicion === null
+      ? null
+      : {
+          id_medicion: variable.id_medicion,
+          valor: Number(variable.valor),
+          origen: variable.origen,
+          fecha_hora: variable.fecha_hora,
+        },
+});
+
+export const getMeasurementHistory = async (
+  query = {},
+  { userId, role }
+) => {
+  const machineId = validateOptionalPositiveInteger(
+    query.id_maquina,
+    "El ID de máquina"
+  );
+
+  const variableId = validateOptionalPositiveInteger(
+    query.id_variable,
+    "El ID de variable"
+  );
+
+  const page =
+    query.pagina === undefined
+      ? 1
+      : validatePositiveInteger(query.pagina, "La página");
+
+  const limit =
+    query.limite === undefined
+      ? 20
+      : validatePositiveInteger(query.limite, "El límite");
+
+  if (limit > 100) {
+    throw createError("El límite no puede ser mayor a 100", 400);
+  }
+
+  const dateFrom = normalizeDateFilter(
+    query.fecha_desde,
+    "fecha_desde"
+  );
+
+  const dateTo = normalizeDateFilter(
+    query.fecha_hasta,
+    "fecha_hasta",
+    true
+  );
+
+  if (dateFrom !== null && dateTo !== null && dateFrom > dateTo) {
+    throw createError(
+      "fecha_desde no puede ser posterior a fecha_hasta",
+      400
+    );
+  }
+
+  if (machineId !== null) {
+    const machine = await findHistoricalMachineById(machineId, {
+      userId,
+      role,
+    });
+
+    if (!machine) {
+      throw createError("Máquina no encontrada", 404);
+    }
+  }
+
+  if (variableId !== null) {
+    const variable = await findHistoricalVariableById(variableId);
+
+    if (!variable) {
+      throw createError("Variable no encontrada", 404);
+    }
+  }
+
+  const offset = (page - 1) * limit;
+
+  if (!Number.isSafeInteger(offset)) {
+    throw createError("La página solicitada está fuera del rango permitido", 400);
+  }
+
+  const filters = {
+    userId,
+    role,
+    machineId,
+    variableId,
+    dateFrom,
+    dateTo,
+  };
+
+  const total = await countMeasurementHistory(filters);
+
+  const measurements = await findMeasurementHistory({
+    ...filters,
+    limit,
+    offset,
+  });
+
+  const data = measurements.map(normalizeHistoricalMeasurement);
+
+  return {
+    count: data.length,
+    pagination: {
+      pagina: page,
+      limite: limit,
+      total,
+      total_paginas: Math.ceil(total / limit),
+    },
+    data,
+  };
+};
+
+export const getCurrentMeasurementState = async (
+  query = {},
+  { userId, role }
+) => {
+  if (query.id_maquina === undefined) {
+    throw createError("El ID de máquina es obligatorio", 400);
+  }
+
+  const machineId = validatePositiveInteger(
+    query.id_maquina,
+    "El ID de máquina"
+  );
+
+  const machine = await findCurrentStateMachineById(machineId, {
+    userId,
+    role,
+  });
+
+  if (!machine) {
+    throw createError("Máquina no encontrada", 404);
+  }
+
+  if (!machine.activo) {
+    throw createError("La máquina se encuentra inactiva", 400);
+  }
+
+  const variables = await findCurrentStateVariables(machineId);
+
+  return {
+    id_maquina: machine.id_maquina,
+    codigo_maquina: machine.codigo,
+    nombre_maquina: machine.nombre,
+    activo: Boolean(machine.activo),
+    variables: variables.map(normalizeCurrentStateVariable),
+  };
 };

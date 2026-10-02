@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
   createTest,
+  getCurrentState,
+  getHistory,
   simulate,
 } from "../controllers/measurement.controller.js";
 import {
@@ -11,6 +13,18 @@ import {
 const router = Router();
 
 router.use(authenticate);
+
+router.get(
+  "/estado-actual",
+  authorizeRoles("administrador", "mantenimiento", "operario"),
+  getCurrentState
+);
+
+router.get(
+  "/",
+  authorizeRoles("administrador", "mantenimiento", "operario"),
+  getHistory
+);
 
 router.post(
   "/simular",
