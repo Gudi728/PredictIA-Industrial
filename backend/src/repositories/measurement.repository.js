@@ -58,7 +58,8 @@ export const findConfiguredLimit = async (connection, machineId, variableId) => 
     `SELECT id_limite, valor_maximo
      FROM limites_configurados
      WHERE id_maquina = ? AND id_variable = ?
-     LIMIT 1`,
+     LIMIT 1
+     FOR UPDATE`,
     [machineId, variableId]
   );
 
@@ -108,4 +109,22 @@ export const findMeasurementById = async (connection, measurementId) => {
   );
 
   return rows[0] || null;
+};
+
+export const findLastThreeMeasurements = async (
+  connection,
+  machineId,
+  variableId
+) => {
+  const [rows] = await connection.execute(
+    `SELECT id_medicion, valor, fecha_hora
+     FROM mediciones
+     WHERE id_maquina = ?
+       AND id_variable = ?
+     ORDER BY fecha_hora DESC, id_medicion DESC
+     LIMIT 3`,
+    [machineId, variableId]
+  );
+
+  return rows.reverse();
 };
