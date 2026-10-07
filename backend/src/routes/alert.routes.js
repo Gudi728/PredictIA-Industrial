@@ -1,5 +1,9 @@
 import { Router } from "express";
-import { getById, list } from "../controllers/alert.controller.js";
+import {
+  changeStatus,
+  getById,
+  list,
+} from "../controllers/alert.controller.js";
 import {
   authenticate,
   authorizeRoles,
@@ -13,6 +17,12 @@ router.get(
   "/",
   authorizeRoles("administrador", "mantenimiento", "operario"),
   list
+);
+
+router.patch(
+  "/:id/estado",
+  authorizeRoles("administrador", "mantenimiento"),
+  changeStatus
 );
 
 router.get(

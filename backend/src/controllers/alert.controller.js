@@ -1,4 +1,8 @@
-import { getAlertById, listAlerts } from "../services/alert.service.js";
+import {
+  changeAlertStatus,
+  getAlertById,
+  listAlerts,
+} from "../services/alert.service.js";
 
 export const list = async (req, res, next) => {
   try {
@@ -29,6 +33,27 @@ export const getById = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: alert,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const changeStatus = async (req, res, next) => {
+  try {
+    const result = await changeAlertStatus(
+      req.params.id,
+      req.body?.estado,
+      req.user.id_usuario
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Estado de la alerta actualizado correctamente",
+      data: {
+        alerta: result.alerta,
+        cambio_estado: result.cambioEstado,
+      },
     });
   } catch (error) {
     next(error);

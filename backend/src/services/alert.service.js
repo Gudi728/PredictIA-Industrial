@@ -1,15 +1,28 @@
 import {
   countAlerts,
   findAlertDetailById,
+  findAlertById,
+  findAlertByIdForUpdate,
   findAlertList,
   findAlertMachineById,
+  findAlertStatusHistoryById,
   findAlertVariableById,
+  insertAlertStatusHistory,
+  updateAlertStatus,
 } from "../repositories/alert.repository.js";
+import pool from "../config/database.js";
 
 const createError = (message, status) => {
   const error = new Error(message);
   error.status = status;
   return error;
+};
+
+const alertStatuses = ["pendiente", "en_revision", "resuelta"];
+const allowedStatusTransitions = {
+  pendiente: ["en_revision"],
+  en_revision: ["resuelta"],
+  resuelta: [],
 };
 
 const validatePositiveInteger = (value, field) => {
@@ -304,4 +317,125 @@ export const getAlertById = async (alertId, { userId, role }) => {
   }
 
   return normalizeAlertDetail(alert);
+};
+
+export const changeAlertStatus = async (alertId, requestedStatus, userId) => {
+  const parsedAlertId = validatePositiveInteger(
+    alertId,
+    "El ID de alerta"
+  );
+
+  if (
+    typeof requestedStatus !== "string" ||
+    !alertStatuses.includes(requestedStatus)
+  ) {
+    throw createError("El estado de alerta no es válido", 400);
+  }
+
+  const connection = await pool.getConnection();
+  let transactionStarted = false;
+
+  try {
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const currentAlert = await findAlertByIdForUpdate(
+      connection,
+      parsedAlertId
+    );
+
+    if (!currentAlert) {
+      throw createError("Alerta no encontrada", 404);
+    }
+
+    const previousStatus = currentAlert.estado_actual;
+
+    if (requestedStatus === previousStatus) {
+      throw createError(
+        "La alerta ya se encuentra en el estado solicitado",
+        409
+      );
+    }
+
+    if (!allowedStatusTransitions[previousStatus]?.includes(requestedStatus)) {
+      throw createError(
+        "La transición de estado solicitada no está permitida",
+        409
+      );
+    }
+
+    const affectedRows = await updateAlertStatus(
+      connection,
+      parsedAlertId,
+      requestedStatus
+    );
+
+    if (affectedRows !== 1) {
+      throw createError(
+        "No fue posible actualizar el estado de la alerta",
+        500
+      );
+    }
+
+    const historyId = await insertAlertStatusHistory(connection, {
+      alertId: parsedAlertId,
+      userId,
+      previousStatus,
+      newStatus: requestedStatus,
+    });
+
+    const updatedAlert = await findAlertById(connection, parsedAlertId);
+    const statusChange = await findAlertStatusHistoryById(
+      connection,
+      historyId
+    );
+
+    if (!updatedAlert || !statusChange) {
+      throw createError(
+        "No fue posible recuperar el cambio de estado de la alerta",
+        500
+      );
+    }
+
+    await connection.commit();
+    transactionStarted = false;
+
+    return {
+      alerta: normalizeAlertListItem(updatedAlert),
+      cambioEstado: statusChange,
+    };
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await connection.rollback();
+      } catch {
+        // Preserve the original error without exposing transaction details.
+      }
+    }
+
+    if (
+      error.code === "ER_NO_REFERENCED_ROW_2" ||
+      error.code === "ER_ROW_IS_REFERENCED_2" ||
+      error.code === "ER_CHECK_CONSTRAINT_VIOLATED" ||
+      error.errno === 1451 ||
+      error.errno === 1452 ||
+      error.errno === 3819
+    ) {
+      throw createError(
+        "No fue posible completar el cambio de estado de la alerta",
+        409
+      );
+    }
+
+    if (error.status) {
+      throw error;
+    }
+
+    throw createError(
+      "No fue posible completar el cambio de estado de la alerta",
+      500
+    );
+  } finally {
+    connection.release();
+  }
 };

@@ -57,6 +57,75 @@ export const findAlertById = async (connection, alertId) => {
   return rows[0] || null;
 };
 
+export const findAlertByIdForUpdate = async (connection, alertId) => {
+  const [rows] = await connection.execute(
+    `SELECT
+       id_alerta,
+       id_medicion,
+       id_maquina,
+       id_variable,
+       motivo,
+       detalle,
+       valor_detectado,
+       limite_aplicado,
+       estado_actual,
+       fecha_hora
+     FROM alertas
+     WHERE id_alerta = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [alertId]
+  );
+
+  return rows[0] || null;
+};
+
+export const updateAlertStatus = async (connection, alertId, status) => {
+  const [result] = await connection.execute(
+    `UPDATE alertas
+     SET estado_actual = ?
+     WHERE id_alerta = ?`,
+    [status, alertId]
+  );
+
+  return result.affectedRows;
+};
+
+export const insertAlertStatusHistory = async (
+  connection,
+  { alertId, userId, previousStatus, newStatus }
+) => {
+  const [result] = await connection.execute(
+    `INSERT INTO historial_estados_alertas (
+       id_alerta,
+       id_usuario,
+       estado_anterior,
+       estado_nuevo
+     )
+     VALUES (?, ?, ?, ?)`,
+    [alertId, userId, previousStatus, newStatus]
+  );
+
+  return result.insertId;
+};
+
+export const findAlertStatusHistoryById = async (connection, historyId) => {
+  const [rows] = await connection.execute(
+    `SELECT
+       id_historial,
+       id_alerta,
+       id_usuario,
+       estado_anterior,
+       estado_nuevo,
+       fecha_hora
+     FROM historial_estados_alertas
+     WHERE id_historial = ?
+     LIMIT 1`,
+    [historyId]
+  );
+
+  return rows[0] || null;
+};
 
 export const findAlertMachineById = async (machineId, { userId, role }) => {
   const query =
