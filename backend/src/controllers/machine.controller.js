@@ -2,7 +2,9 @@ import {
   changeMachineStatus,
   createMachine,
   getMachine,
+  listMachineObservations,
   listMachines,
+  registerMachineObservation,
   updateMachine,
 } from "../services/machine.service.js";
 
@@ -80,6 +82,44 @@ export const changeStatus = async (req, res, next) => {
         ? "Máquina reactivada correctamente"
         : "Máquina desactivada correctamente",
       data: machine,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createObservation = async (req, res, next) => {
+  try {
+    const observation = await registerMachineObservation(
+      req.params.id,
+      req.body?.descripcion,
+      req.user
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Observación registrada correctamente",
+      data: observation,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getObservations = async (req, res, next) => {
+  try {
+    const result = await listMachineObservations(
+      req.params.id,
+      req.query,
+      req.user
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Observaciones obtenidas correctamente",
+      count: result.count,
+      pagination: result.pagination,
+      data: result.data,
     });
   } catch (error) {
     next(error);

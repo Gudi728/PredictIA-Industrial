@@ -1,12 +1,18 @@
 import {
+  countMachineObservations,
   findAllMachines,
   findMachineByCode,
   findMachineById,
   findMachineConflictExcludingId,
+  findMachineForObservationForUpdate,
+  findMachineObservationById,
+  findMachineObservations,
+  insertMachineObservation,
   insertMachine,
   updateMachineRecord,
   updateMachineStatus,
 } from "../repositories/machine.repository.js";
+import pool from "../config/database.js";
 
 const createError = (message, status) => {
   const error = new Error(message);
@@ -22,6 +28,45 @@ const validatePositiveInteger = (value) => {
   }
 
   return numberValue;
+};
+
+const validateStrictPositiveInteger = (value, field) => {
+  if (
+    typeof value === "boolean" ||
+    (typeof value === "string" && !/^\d+$/.test(value)) ||
+    (typeof value !== "number" && typeof value !== "string")
+  ) {
+    throw createError(`${field} debe ser un entero decimal positivo`, 400);
+  }
+
+  const numberValue = Number(value);
+
+  if (!Number.isSafeInteger(numberValue) || numberValue <= 0) {
+    throw createError(`${field} debe ser un entero decimal positivo`, 400);
+  }
+
+  return numberValue;
+};
+
+const validateMachineObservationDescription = (description) => {
+  if (typeof description !== "string") {
+    throw createError("La descripción es obligatoria", 400);
+  }
+
+  const normalizedDescription = description.trim();
+
+  if (!normalizedDescription) {
+    throw createError("La descripción es obligatoria", 400);
+  }
+
+  if (Array.from(normalizedDescription).length > 1000) {
+    throw createError(
+      "La descripción no puede superar los 1000 caracteres",
+      400
+    );
+  }
+
+  return normalizedDescription;
 };
 
 const validateRequiredText = (value, field, maxLength) => {
@@ -213,4 +258,157 @@ export const changeMachineStatus = async (
   await updateMachineStatus(normalizedMachineId, active);
 
   return getMachine(normalizedMachineId, authenticatedUser);
+};
+
+export const registerMachineObservation = async (
+  machineId,
+  description,
+  authenticatedUser
+) => {
+  const normalizedMachineId = validateStrictPositiveInteger(
+    machineId,
+    "El ID de máquina"
+  );
+  const normalizedDescription =
+    validateMachineObservationDescription(description);
+
+  if (authenticatedUser.rol !== "operario") {
+    throw createError("No tiene permisos para realizar esta acción", 403);
+  }
+
+  const userId = validateStrictPositiveInteger(
+    authenticatedUser.id_usuario,
+    "El ID del usuario autenticado"
+  );
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const machine = await findMachineForObservationForUpdate(
+      connection,
+      normalizedMachineId,
+      { userId, role: authenticatedUser.rol }
+    );
+
+    if (!machine) {
+      throw createError("Máquina no encontrada", 404);
+    }
+
+    const result = await insertMachineObservation(connection, {
+      machineId: normalizedMachineId,
+      userId,
+      description: normalizedDescription,
+    });
+
+    if (
+      result.affectedRows !== 1 ||
+      !Number.isSafeInteger(result.insertId) ||
+      result.insertId <= 0
+    ) {
+      throw createError("No fue posible registrar la observación", 500);
+    }
+
+    const observation = await findMachineObservationById(
+      connection,
+      result.insertId
+    );
+
+    if (!observation) {
+      throw createError(
+        "No fue posible recuperar la observación registrada",
+        500
+      );
+    }
+
+    await connection.commit();
+    transactionStarted = false;
+
+    return observation;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await connection.rollback();
+      } catch {
+        // Preserve the original error without exposing transaction details.
+      }
+    }
+
+    if (error.status) {
+      throw error;
+    }
+
+    throw createError("No fue posible registrar la observación", 500);
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+export const listMachineObservations = async (
+  machineId,
+  filters = {},
+  authenticatedUser
+) => {
+  const normalizedMachineId = validateStrictPositiveInteger(
+    machineId,
+    "El ID de máquina"
+  );
+  const pagina = validateStrictPositiveInteger(
+    filters.pagina === undefined ? 1 : filters.pagina,
+    "La página"
+  );
+  const limite = validateStrictPositiveInteger(
+    filters.limite === undefined ? 20 : filters.limite,
+    "El límite"
+  );
+
+  if (limite > 100) {
+    throw createError(
+      "El límite debe ser un entero entre 1 y 100",
+      400
+    );
+  }
+
+  const offset = (pagina - 1) * limite;
+
+  if (!Number.isSafeInteger(offset)) {
+    throw createError("La página no es válida", 400);
+  }
+
+  const machine = await findMachineById(normalizedMachineId, {
+    userId: authenticatedUser.id_usuario,
+    role: authenticatedUser.rol,
+  });
+
+  if (!machine) {
+    throw createError("Máquina no encontrada", 404);
+  }
+
+  const accessContext = {
+    machineId: normalizedMachineId,
+    userId: authenticatedUser.id_usuario,
+    role: authenticatedUser.rol,
+  };
+  const total = await countMachineObservations(accessContext);
+  const observations = await findMachineObservations({
+    ...accessContext,
+    limit: limite,
+    offset,
+  });
+
+  return {
+    count: observations.length,
+    pagination: {
+      pagina,
+      limite,
+      total,
+      total_paginas: total === 0 ? 0 : Math.ceil(total / limite),
+    },
+    data: observations,
+  };
 };

@@ -1,8 +1,10 @@
 import { Router } from "express";
 import {
 	changeStatus,
+	createObservation,
 	create,
 	getById,
+	getObservations,
 	list,
 	update,
 } from "../controllers/machine.controller.js";
@@ -19,6 +21,16 @@ router.get(
 	"/",
 	authorizeRoles("administrador", "mantenimiento", "operario"),
 	list
+);
+router.post(
+	"/:id/observaciones",
+	authorizeRoles("operario"),
+	createObservation
+);
+router.get(
+	"/:id/observaciones",
+	authorizeRoles("administrador", "mantenimiento", "operario"),
+	getObservations
 );
 router.get(
 	"/:id",
