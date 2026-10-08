@@ -1,12 +1,16 @@
 import {
   countAlerts,
+  countAlertAttentions,
   findAlertDetailById,
+  findAlertAttentionById,
+  findAlertAttentions,
   findAlertById,
   findAlertByIdForUpdate,
   findAlertList,
   findAlertMachineById,
   findAlertStatusHistoryById,
   findAlertVariableById,
+  insertAlertAttention,
   insertAlertStatusHistory,
   updateAlertStatus,
 } from "../repositories/alert.repository.js";
@@ -438,4 +442,165 @@ export const changeAlertStatus = async (alertId, requestedStatus, userId) => {
   } finally {
     connection.release();
   }
+};
+
+const validateAttentionObservation = (observation) => {
+  if (typeof observation !== "string") {
+    throw createError("La observación es obligatoria", 400);
+  }
+
+  const normalizedObservation = observation.trim();
+
+  if (!normalizedObservation) {
+    throw createError("La observación es obligatoria", 400);
+  }
+
+  const characterCount = Array.from(normalizedObservation).length;
+
+  if (characterCount > 1000) {
+    throw createError(
+      "La observación no puede superar los 1000 caracteres",
+      400
+    );
+  }
+
+  return normalizedObservation;
+};
+
+export const registerAlertAttention = async (
+  alertId,
+  observation,
+  authenticatedUserId
+) => {
+  const parsedAlertId = validatePositiveInteger(
+    alertId,
+    "El ID de alerta"
+  );
+  const normalizedObservation = validateAttentionObservation(observation);
+  const userId = validatePositiveInteger(
+    authenticatedUserId,
+    "El ID del usuario autenticado"
+  );
+
+  let connection;
+  let transactionStarted = false;
+
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+    transactionStarted = true;
+
+    const alert = await findAlertByIdForUpdate(connection, parsedAlertId);
+
+    if (!alert) {
+      throw createError("Alerta no encontrada", 404);
+    }
+
+    const result = await insertAlertAttention(connection, {
+      alertId: parsedAlertId,
+      userId,
+      observation: normalizedObservation,
+    });
+
+    if (result.affectedRows !== 1 || !result.insertId) {
+      throw createError("No fue posible registrar la atención", 500);
+    }
+
+    const attention = await findAlertAttentionById(
+      connection,
+      result.insertId
+    );
+
+    if (!attention) {
+      throw createError("No fue posible recuperar la atención registrada", 500);
+    }
+
+    await connection.commit();
+    transactionStarted = false;
+
+    return attention;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await connection.rollback();
+      } catch {
+        // Preserve the original error without exposing transaction details.
+      }
+    }
+
+    if (
+      error.code === "ER_NO_REFERENCED_ROW_2" ||
+      error.errno === 1452
+    ) {
+      throw createError("No fue posible registrar la atención", 409);
+    }
+
+    if (error.status) {
+      throw error;
+    }
+
+    throw createError("No fue posible registrar la atención", 500);
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+  }
+};
+
+export const listAlertAttentions = async (
+  alertId,
+  filters = {},
+  { userId, role }
+) => {
+  const parsedAlertId = validatePositiveInteger(
+    alertId,
+    "El ID de alerta"
+  );
+  const pagina = validatePositiveInteger(
+    filters.pagina === undefined ? 1 : filters.pagina,
+    "La página"
+  );
+  const limite = validatePositiveInteger(
+    filters.limite === undefined ? 20 : filters.limite,
+    "El límite"
+  );
+
+  if (limite > 100) {
+    throw createError(
+      "El límite debe ser un número entero entre 1 y 100",
+      400
+    );
+  }
+
+  const offset = (pagina - 1) * limite;
+
+  if (!Number.isSafeInteger(offset)) {
+    throw createError("La página no es válida", 400);
+  }
+
+  await getAlertById(parsedAlertId, { userId, role });
+
+  const accessContext = {
+    alertId: parsedAlertId,
+    userId,
+    role,
+  };
+
+  const total = await countAlertAttentions(accessContext);
+  const attentions = await findAlertAttentions({
+    ...accessContext,
+    limit: limite,
+    offset,
+  });
+
+  return {
+    count: attentions.length,
+    pagination: {
+      pagina,
+      limite,
+      total,
+      total_paginas: total === 0 ? 0 : Math.ceil(total / limite),
+    },
+    data: attentions,
+  };
 };

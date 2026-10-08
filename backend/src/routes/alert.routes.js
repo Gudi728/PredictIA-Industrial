@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
   changeStatus,
+  createAttention,
+  getAttentions,
   getById,
   list,
 } from "../controllers/alert.controller.js";
@@ -17,6 +19,18 @@ router.get(
   "/",
   authorizeRoles("administrador", "mantenimiento", "operario"),
   list
+);
+
+router.post(
+  "/:id/atenciones",
+  authorizeRoles("administrador", "mantenimiento"),
+  createAttention
+);
+
+router.get(
+  "/:id/atenciones",
+  authorizeRoles("administrador", "mantenimiento", "operario"),
+  getAttentions
 );
 
 router.patch(

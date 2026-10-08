@@ -127,6 +127,130 @@ export const findAlertStatusHistoryById = async (connection, historyId) => {
   return rows[0] || null;
 };
 
+export const insertAlertAttention = async (
+  connection,
+  { alertId, userId, observation }
+) => {
+  const [result] = await connection.execute(
+    `INSERT INTO atenciones_alertas (
+       id_alerta,
+       id_usuario,
+       observacion
+     )
+     VALUES (?, ?, ?)`,
+    [alertId, userId, observation]
+  );
+
+  return {
+    affectedRows: result.affectedRows,
+    insertId: result.insertId,
+  };
+};
+
+export const findAlertAttentionById = async (connection, attentionId) => {
+  const [rows] = await connection.execute(
+    `SELECT
+       aa.id_atencion,
+       aa.id_alerta,
+       aa.id_usuario,
+       u.nombre_usuario,
+       r.nombre AS rol,
+       aa.observacion,
+       aa.fecha_hora
+     FROM atenciones_alertas aa
+     INNER JOIN usuarios u
+       ON u.id_usuario = aa.id_usuario
+     INNER JOIN roles r
+       ON r.id_rol = u.id_rol
+     WHERE aa.id_atencion = ?
+     LIMIT 1`,
+    [attentionId]
+  );
+
+  return rows[0] || null;
+};
+
+const buildAttentionAccessCondition = ({ userId, role }) => {
+  if (role !== "operario") {
+    return {
+      condition: "",
+      parameters: [],
+    };
+  }
+
+  return {
+    condition: `
+       AND EXISTS (
+         SELECT 1
+         FROM asignaciones_maquinas am
+         INNER JOIN maquinas m
+           ON m.id_maquina = am.id_maquina
+         WHERE am.id_usuario = ?
+           AND am.id_maquina = a.id_maquina
+           AND am.activo = TRUE
+           AND m.activo = TRUE
+       )`,
+    parameters: [userId],
+  };
+};
+
+export const countAlertAttentions = async ({ alertId, userId, role }) => {
+  const { condition, parameters } = buildAttentionAccessCondition({
+    userId,
+    role,
+  });
+
+  const [rows] = await pool.execute(
+    `SELECT COUNT(*) AS total
+     FROM atenciones_alertas aa
+     INNER JOIN alertas a
+       ON a.id_alerta = aa.id_alerta
+     WHERE aa.id_alerta = ?
+     ${condition}`,
+    [alertId, ...parameters]
+  );
+
+  return Number(rows[0].total);
+};
+
+export const findAlertAttentions = async ({
+  alertId,
+  userId,
+  role,
+  limit,
+  offset,
+}) => {
+  const { condition, parameters } = buildAttentionAccessCondition({
+    userId,
+    role,
+  });
+
+  const [rows] = await pool.execute(
+    `SELECT
+       aa.id_atencion,
+       aa.id_alerta,
+       aa.id_usuario,
+       u.nombre_usuario,
+       r.nombre AS rol,
+       aa.observacion,
+       aa.fecha_hora
+     FROM atenciones_alertas aa
+     INNER JOIN alertas a
+       ON a.id_alerta = aa.id_alerta
+     INNER JOIN usuarios u
+       ON u.id_usuario = aa.id_usuario
+     INNER JOIN roles r
+       ON r.id_rol = u.id_rol
+     WHERE aa.id_alerta = ?
+     ${condition}
+     ORDER BY aa.fecha_hora DESC, aa.id_atencion DESC
+     LIMIT ? OFFSET ?`,
+    [alertId, ...parameters, limit, offset]
+  );
+
+  return rows;
+};
+
 export const findAlertMachineById = async (machineId, { userId, role }) => {
   const query =
     role === "operario"

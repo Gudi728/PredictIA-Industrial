@@ -1,7 +1,9 @@
 import {
   changeAlertStatus,
   getAlertById,
+  listAlertAttentions,
   listAlerts,
+  registerAlertAttention,
 } from "../services/alert.service.js";
 
 export const list = async (req, res, next) => {
@@ -54,6 +56,47 @@ export const changeStatus = async (req, res, next) => {
         alerta: result.alerta,
         cambio_estado: result.cambioEstado,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createAttention = async (req, res, next) => {
+  try {
+    const attention = await registerAlertAttention(
+      req.params.id,
+      req.body?.observacion,
+      req.user.id_usuario
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Atención registrada correctamente",
+      data: attention,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAttentions = async (req, res, next) => {
+  try {
+    const result = await listAlertAttentions(
+      req.params.id,
+      req.query,
+      {
+        userId: req.user.id_usuario,
+        role: req.user.rol,
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Atenciones obtenidas correctamente",
+      count: result.count,
+      pagination: result.pagination,
+      data: result.data,
     });
   } catch (error) {
     next(error);
