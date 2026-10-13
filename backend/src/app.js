@@ -9,6 +9,7 @@ import machineRoutes from "./routes/machine.routes.js";
 import limitRoutes from "./routes/limit.routes.js";
 import measurementRoutes from "./routes/measurement.routes.js";
 import alertRoutes from "./routes/alert.routes.js";
+import assignmentRoutes from "./routes/assignment.routes.js";
 import { notFound } from "./middlewares/notFound.middleware.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 
@@ -33,6 +34,7 @@ app.use("/api/maquinas", machineRoutes);
 app.use("/api/limites", limitRoutes);
 app.use("/api/mediciones", measurementRoutes);
 app.use("/api/alertas", alertRoutes);
+app.use("/api/asignaciones", assignmentRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
